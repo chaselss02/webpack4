@@ -1,6 +1,8 @@
 /*
 题外：webpack-dev-middleware 的好处是可以在既有的 Express 代码基础上快速添加 webpack-dev-server 的功能，同时利用 Express 来根据需要添加更多的功能，如 mock 服务、代理 API 请求等。
 需要 CSS Sprites 的话，可以使用 webpack-spritesmith 或者 sprite-webpack-plugin。
+sideEffects解决有的时候我们只是使用了其中的几个函数，全部函数的实现都打包到我们的应用代码中。 lodash 的 ES 版本 的 package.json 文件中已经有 sideEffects: false 这个声明
+换种方式处理图片： 直接使用 imagemin 来做图片压缩，编写简单的命令即可。然后使用 pre-commit 这个类库来配置对应的命令，使其在 git commit 的时候触发，并且将要提交的文件替换为压缩后的文件
 */
 /**
     生产环境可能需要分离 CSS 成单独的文件，以便多个页面共享同一个 CSS 文件
@@ -25,6 +27,8 @@ const path = require('path');
 const cleanWebpack = require('clean-webpack-plugin')
 const webpack = require('webpack')
 const CopyWebpackPlugin = require('copy-webpack-plugin')
+const ManifestPlugin = require('webpack-manifest-plugin');
+const SpritesmithPlugin = require('webpack-spritesmith');
 /*
 会在构建的时候创建一个HTML，实际没啥用。自己写个模板比较好
 为html文件中引入的外部资源如script、link动态添加每次compile后的hash，防止引用缓存的外部文件问题
@@ -56,19 +60,21 @@ module.exports = (env, argv)=> {
     },
     entry:  {
         main1: './src/index.js',
-        vendor: ["react", "lodash", "angular"], // 指定公共使用的第三方类库
-        //main2: './src/index2.js'
+        vendor: ["react"], // 指定公共使用的第三方类库
+        main2: './src/index2.js'
     },
     output: {
         filename: '[name].js',
         path: __dirname + '/dist',
         //打包的过程中存入临时文件夹，用于热更新还可以处理静态文件的路径如生产环境中css抽离后，css引用的图片路径出错
-        publicPath: ''
+        publicPath: '',
+        chunkFilename: '[name].[hash:8].js' // 指定分离出来的代码文件的名称
     },
     resolve: {
         modules: [  //import ‘ad’导入模块的时候先去node_modules下找，找不到去src/components找
             "node_modules",
-            path.resolve(__dirname, 'src/components')
+            path.resolve(__dirname, 'src/components'),
+            'spritesmith-generated', // webpack-spritesmith 生成所需文件的目录
         ],  
         extensions: [".wasm", ".mjs", ".js", ".json", ".jsx"],
         alias:{
@@ -100,6 +106,10 @@ module.exports = (env, argv)=> {
                 test: /\.js$/,
                 exclude: /node_modules/,
                 loader: "babel-loader",
+                options: {
+                  "plugins": ["@babel/plugin-syntax-dynamic-import"],// Babel 插件来处理 import()动态导入的这种语法。
+                  "presets": [["env", { "modules": false }]]//Tree shaking
+                }
             },
             {
                 test: /\.less$/,
@@ -126,7 +136,7 @@ module.exports = (env, argv)=> {
                   {
                     loader: 'file-loader',//主要作用是直接输出文件。把构建后的文件按原路径返回
                     options: {
-                        name: '[folder]/[name][hash].[ext]',//[path]是包括src的文件路径folder是image的路径。string/function
+                        name: '[folder]/[name].[ext]',//[path]是包括src的文件路径folder是image的路径。string/function
                         //outputPath: 'image', //输出到image的文件夹string/function
                     },
                     
@@ -173,8 +183,8 @@ module.exports = (env, argv)=> {
                 minifyJS: true // 压缩 HTML 中出现的 JS 代码
               }
         }),
-        new extractText('[name][hash].css'),//name是JS的入口名
-       // new cleanWebpack()
+        new extractText('[name].css'),//name是JS的入口名
+       //new cleanWebpack(['dist']),
        new webpack.DefinePlugin({//创建一些在编译时可以配置的全局常量(和window同级)
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
         PRODUCTION: JSON.stringify(true), // const PRODUCTION = true
@@ -200,23 +210,40 @@ module.exports = (env, argv)=> {
       //忽略某些特定的模块，让 webpack 不把这些指定的模块打包进去。例如我们使用 moment.js，直接引用后，里边有大量的 i18n 的代码
       new webpack.IgnorePlugin(/^\.\/locale$/, /moment$/),//是匹配引入模块路径的正则表达式，第二个是匹配模块的对应上下文，即所在目录名。
       //new webpack.NamedModulesPlugin(), // 用于启动 HMR 时可以显示模块的相对路径
-      //new webpack.HotModuleReplacementPlugin(), // Hot Module Replacement 的插件
+      new webpack.HotModuleReplacementPlugin(), // Hot Module Replacement 的插件
       // webpack 3.x 中如何配置代码分离
-      new webpack.optimize.CommonsChunkPlugin({
+      //new webpack.optimize.CommonsChunkPlugin({
         /* name: "commons", // 公共使用的 chunk 的名称
         filename: "commons.js", // 公共 chunk 的生成文件名
         minChunks: 3, // 公共的部分必须被 3 个 chunk 共享 */
-        name: 'vendor', // 使用 vendor 入口作为公共部分
-        filename: "vendor.js", 
+        //name: 'vendor', // 使用 vendor 入口作为公共部分
+        //filename: "vendor.js", 
         //如果这里和之前一样依旧设置为 3，那么被 3 个以上的 chunk 依赖的模块会和 React、React-Redux 一同打包进 vendor,失去显式指定的意义
-        minChunks: Infinity, //fn/STRING 无穷大 这个配置会让 webpack 不再自动抽离公共模块
-      })
+        //minChunks: Infinity, //fn/STRING 无穷大 这个配置会让 webpack 不再自动抽离公共模块
+      //})
+      new ManifestPlugin(),//会维护一份用于管理构建代码时各个模块之间交互的表数据，webpack 官方称之为 Manifest
+      new SpritesmithPlugin({
+        src: {
+          cwd: path.resolve(__dirname, 'src/image'), // 多个图片所在的目录
+          glob: '*.jpeg' // 匹配图片的路径
+        },
+        target: {
+          // 生成最终图片的路径
+          image: path.resolve(__dirname, 'src/spritesmith-generated/sprite.png'), 
+          // 生成所需 SASS/LESS/Stylus mixins 代码，我们使用 Stylus 预处理器做例子
+          css: path.resolve(__dirname, 'src/spritesmith-generated/sprite.styl'), 
+        },
+        apiOptions: {
+          cssImageRef: "~sprite.png"
+        },
+      }),//需要 CSS Sprites 的话
     ],
     devServer: {
         contentBase: path.join(__dirname, 'dist'),//配置提供额外静态文件内容的目录
         hot: true, // dev server 的配置要启动 hot，或者在命令行中带参数开启//启用 HMR 
         compress: true,//gzip压缩
         port: 9000,//默认是 8080
+        open: true,//开启后自动
         publicPath:'',//建议将 devServer.publicPath 和 output.publicPath 的值保持一致。
         before: function(app, server) {
             // 做些有趣的事

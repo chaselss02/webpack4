@@ -12,6 +12,7 @@
   "license": "ISC",
   "devDependencies": {
     "@babel/core": "^7.3.4",
+    "@babel/plugin-syntax-dynamic-import": "^7.2.0",
     "babel-loader": "^8.0.5",
     "clean-webpack-plugin": "^2.0.0",
     "copy-webpack-plugin": "^5.0.1",
@@ -29,9 +30,12 @@
     "webpack": "^4.29.6",
     "webpack-cli": "^3.2.3",
     "webpack-dev-server": "^3.2.1",
-    "webpack-merge": "^4.2.1"
+    "webpack-manifest-plugin": "^2.0.4",
+    "webpack-merge": "^4.2.1",
+    "webpack-spritesmith": "^1.0.0"
   },
   "dependencies": {
+    "loadsh": "^0.0.4",
     "react": "^16.8.4"
   }
 }

@@ -1,0 +1,14 @@
+{
+  "main1.js": "main1.js",
+  "main1.css": "main1.css",
+  "main2.js": "main2.js",
+  "vendor.js": "vendor.ea615349.js",
+  "vendor.css": "vendor.css",
+  "vendors~lodash.js": "vendors~lodash.ea615349.js",
+  "build/*.ico": "build/*.ico",
+  "build/lss.text": "build/lss.text",
+  "hello.1.jpeg": "d6d88ece3c05e412f990db026f884fc7.jpeg",
+  "image/hello.1.jpeg": "image/hello.1.jpeg",
+  "image/hello.jpeg": "image/hello.jpeg",
+  "index.html": "index.html"
+}
